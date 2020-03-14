@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/childe/gohangout/field_setter"
@@ -28,6 +29,7 @@ func (l *MethodLibrary) NewReplaceFilter(config map[interface{}]interface{}) *Re
 	}
 
 	if fieldsI, ok := config["fields"]; ok {
+
 		for fieldI, configI := range fieldsI.(map[interface{}]interface{}) {
 			fieldSetter := field_setter.NewFieldSetter(fieldI.(string))
 			if fieldSetter == nil {
@@ -62,24 +64,64 @@ func (l *MethodLibrary) NewReplaceFilter(config map[interface{}]interface{}) *Re
 	} else {
 		glog.Fatal("fileds must be set in replace filter plugin")
 	}
+
 	return p
 }
 
-// 如果字段不是字符串, 返回false, 其它返回true
+// if the filed is not string, return false, else true
 func (p *ReplaceFilter) Filter(event map[string]interface{}) (map[string]interface{}, bool) {
 	success := true
 	for _, f := range p.fields {
 		value := f.v.Render(event)
 		if value == nil {
 			continue
-			success = false
 		}
 		if s, ok := value.(string); ok {
-			new := strings.Replace(s, f.old, f.new, f.n)
+			var new string
+			if strings.HasPrefix(f.old, "sensitive-mobile-") {
+				regexString := strings.Replace(f.old, "sensitive-mobile-", "", -1)
+				rege, _ := regexp.Compile(regexString)
+				new = rege.ReplaceAllStringFunc(s, replaceMobileNumber)
+			} else if strings.HasPrefix(f.old, "sensitive-email-") {
+				regexString := strings.Replace(f.old, "sensitive-email-", "", -1)
+				rege, _ := regexp.Compile(regexString)
+				new = rege.ReplaceAllStringFunc(s, replaceEmailNumber)
+			} else {
+				new = strings.Replace(s, f.old, f.new, f.n)
+			}
 			f.s.SetField(event, new, "", true)
 		} else {
 			success = false
 		}
 	}
 	return event, success
+
+}
+
+func replaceMobileNumber(mobile string) string {
+	n := len(mobile)
+	result := make([]byte, n)
+
+	for i := 0; i < n; i++ {
+		if i < 7 {
+			result[i] = '*'
+		} else {
+			result[i] = mobile[i]
+		}
+	}
+	return string(result)
+	//return "[****** sensitive ******]"
+}
+
+func replaceEmailNumber(email string) string {
+	n := len(email)
+	result := make([]byte, n)
+	for i := 0; i < n; i++ {
+		if i > 1 && i < n-4 {
+			result[i] = '*'
+		} else {
+			result[i] = email[i]
+		}
+	}
+	return string(result)
 }
